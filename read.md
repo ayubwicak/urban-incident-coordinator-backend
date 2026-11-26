@@ -1,0 +1,301 @@
+# Urban Incident Coordinator — Backend
+
+Backend demo **Multi-Agent Public Policy & Urban Incident Coordinator** untuk menerima laporan insiden, menganalisisnya dengan beberapa agent, mengambil konteks kebijakan lokal, menyusun rekomendasi penanganan, dan mengaudit rekomendasi sebelum menghasilkan draft keputusan.
+
+> **Penting untuk demo:** Backend ini masih prototipe. Dataset kebijakan, fasilitas, dan tim dapat berupa data simulasi. Draft keputusan, SPT, serta pesan warga bukan keputusan resmi dan harus diperiksa serta disetujui petugas manusia.
+
+## 1. Teknologi
+
+- Node.js (ES Modules)
+- Express.js
+- LangGraph.js
+- LangChain Google GenAI (`@langchain/google-genai`)
+- Google Gemini API
+- Open-Meteo (konteks cuaca, jika service dapat diakses)
+- Server-Sent Events (SSE) untuk stream hasil/progres
+- Penyimpanan incident sementara di memory (`Map`), **belum menggunakan database**
+
+## 2. Arsitektur dan alur
+
+```mermaid
+flowchart TD
+    A[Postman / Next.js] --> B[Express API]****
+    B --> C[POST /api/incidents\nBuat incident dan simpan sementara]
+    C --> D[GET /api/stream\nSSE]
+    D --> E[LangGraph]
+    E --> F[Triage Agent]
+    F --> G[Policy Retrieval Agent]
+    G --> H[Incident Optimizer Agent]
+    H --> I[Critic Audit Agent]
+    I --> J{Audit lolos?}
+    J -->|Ya| K[Finalisasi keputusan]
+    J -->|Tidak dan masih dapat retry| H
+    J -->|Retry habis| K
+    K --> L[decision_ready]
+```
+
+### Agent
+
+1. **Triage Agent** — mengklasifikasi laporan, mendeteksi objek/konteks, dan menghasilkan skor severity (S) serta impact risk (R).
+2. **Policy Retrieval Agent** — mencari dokumen kebijakan/SOP lokal dari dataset backend dan menghasilkan rekomendasi instansi serta dasar kebijakan.
+3. **Incident Optimizer Agent** — mempertimbangkan cuaca, fasilitas vital, dan tim; menghitung skor urgensi serta menyiapkan rekomendasi penugasan, draft SPT, dan pesan untuk warga.
+4. **Critic Audit Agent** — mengecek validitas dasar kebijakan, anggaran, dan beban/ketersediaan tim. Audit gagal dapat mengarahkan graph kembali ke Optimizer.
+5. **Finalization** — menyiapkan payload keputusan (`decision_ready`) untuk diperiksa manusia.
+
+### Skor urgensi
+
+Pada implementasi demo, skor urgensi menggunakan formula:
+
+`U = round(0.35 × S + 0.25 × V + 0.25 × W + 0.15 × R)`
+
+- `S`: severity
+- `V`: konteks fasilitas vital
+- `W`: konteks cuaca
+- `R`: impact risk
+
+Level prioritas demo: P1 jika U >= 80; P2 jika U >= 60 dan < 80; P3 jika U < 60. Nilai dan aturan ini adalah konfigurasi prototipe, bukan standar operasional pemerintah.
+
+## 3. Struktur folder
+
+```text
+src/
+├── agents/
+│   ├── triage.js       # Agent klasifikasi
+│   ├── policy.js       # Agent retrieval kebijakan
+│   ├── optimizer.js    # Agent optimasi penanganan
+│   └── critic.js       # Agent audit
+├── controllers/
+│   └── incidentController.js
+├── data/
+│   ├── policies.js     # Dataset kebijakan demo
+│   ├── facilities.js   # Data fasilitas demo
+│   └── teams.js        # Data tim demo
+├── graph/
+│   ├── state.js        # Schema state LangGraph
+│   ├── nodes.js        # Fungsi node
+│   └── graph.js        # Susunan graph dan routing
+├── routes/
+│   └── incidentRoutes.js
+├── services/
+│   ├── weather.js
+│   ├── facilities.js
+│   ├── teams.js
+│   └── policyStore.js
+├── utils/
+│   ├── logger.js
+│   ├── scoring.js
+│   └── demo.js
+├── app.js
+└── server.js
+```
+
+## 4. Prasyarat
+
+- Node.js versi 20 atau yang lebih baru (disarankan versi LTS yang kompatibel dengan dependency proyek).
+- npm.
+- Google Gemini API key dari Google AI Studio, dengan akses dan kuota model yang digunakan.
+- Postman (opsional, untuk menguji API).
+
+## 5. Instalasi dan konfigurasi
+
+### Langkah 1 — Ambil project
+
+Jika project diberikan sebagai ZIP, ekstrak terlebih dahulu. Buka folder backend yang berisi `package.json` di VS Code.
+
+### Langkah 2 — Instal dependency
+
+Jalankan di terminal pada folder backend:
+
+```bash
+npm install
+```
+
+### Langkah 3 — Buat file environment
+
+Salin `.env.example` menjadi `.env` (Windows PowerShell):
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Atau Windows Command Prompt:
+
+```cmd
+copy .env.example .env
+```
+
+Edit `.env`:
+
+```dotenv
+PORT=8000
+GEMINI_API_KEY=ISI_API_KEY_ANDA
+DEMO_MODE=false
+CORS_ORIGIN=http://localhost:3000
+```
+
+- `PORT`: port server.
+- `GEMINI_API_KEY`: API key Gemini. Jangan commit atau membagikan file `.env`.
+- `DEMO_MODE`: `false` menggunakan pemanggilan agent AI; `true` mengizinkan fallback demo jika pipeline gagal, sesuai implementasi controller.
+- `CORS_ORIGIN`: origin frontend. Beberapa origin dapat dipisahkan dengan koma, sesuai konfigurasi backend.
+
+### Langkah 4 — Jalankan backend
+
+Mode development:
+
+```bash
+npm run dev
+```
+
+Mode biasa:
+
+```bash
+npm start
+```
+
+Server default berjalan di `http://localhost:8000`.
+
+### Langkah 5 — Cek health
+
+```http
+GET http://localhost:8000/health
+```
+
+Respons yang diharapkan:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+## 6. Pengujian API dengan Postman
+
+### A. Buat laporan incident
+
+Request:
+
+```http
+POST http://localhost:8000/api/incidents
+Content-Type: application/json
+```
+
+Body → raw → JSON:
+
+```json
+{
+  "description": "Terjadi banjir di jalan utama, air mulai memasuki area permukiman.",
+  "location": "Jalan utama dekat pasar",
+  "latitude": -7.533,
+  "longitude": 110.595
+}
+```
+
+Field:
+
+- `description` (wajib): deskripsi laporan dalam string tidak kosong.
+- `location` (opsional): deskripsi lokasi.
+- `latitude` (opsional): latitude numerik.
+- `longitude` (opsional): longitude numerik.
+- `imageUrl` (opsional): URL gambar jika didukung oleh agent yang digunakan.
+
+Respons sukses umumnya berstatus `201 Created` dan berisi objek `incident`, termasuk `id`. **Simpan nilai `incident.id`**, karena diperlukan untuk request stream.
+
+### B. Baca stream pemrosesan incident
+
+Request:
+
+```http
+GET http://localhost:8000/api/stream?incident_id=ID_INCIDENT_DARI_POST
+```
+
+Ganti `ID_INCIDENT_DARI_POST` dengan ID dari respons POST.
+
+Endpoint ini menggunakan SSE (`text/event-stream`). Postman akan mempertahankan koneksi selama server mengirim event dan proses berlangsung.
+
+Event yang mungkin diterima:
+
+- `log`: pesan/log agent atau sistem.
+- `state_update`: status agent.
+- `agent_progress`: update node (jika versi controller yang mendukungnya digunakan).
+- `decision_ready`: hasil keputusan akhir.
+- `error`: proses pipeline gagal.
+
+Contoh event SSE:
+
+```text
+event: message
+data: {"type":"log","log":{"content":"..."}}
+
+```
+
+Payload SSE adalah stream, bukan satu JSON respons biasa. `200 OK` hanya berarti koneksi berhasil dibuka; bukan bukti graph selesai. Tunggu payload `decision_ready` atau `error`.
+
+> Controller menjalankan graph ketika endpoint stream dipanggil. Memanggil stream endpoint lagi dengan incident ID yang sama dapat memulai pemrosesan graph lagi; belum ada mekanisme idempotensi/pencegahan proses ganda.
+
+## 7. Troubleshooting
+
+### `description wajib berupa string tidak kosong`
+
+POST body harus dikirim melalui **Body → raw → JSON**, bukan Query Params. Pastikan field `description` ada dan bukan string kosong.
+
+### Konflik nama state dan node LangGraph
+
+Nama node tidak boleh sama dengan channel/atribut state. Jika state memiliki channel `triage` atau `decision`, jangan mendaftarkan node dengan nama yang identik. Gunakan nama node yang berbeda, misalnya `finalize` untuk node finalisasi, dan sesuaikan edge/routing.
+
+### Gemini `404 Not Found` / model tidak tersedia
+
+Model yang dipanggil mungkin tidak tersedia untuk API key, region, versi API, atau integrasi yang digunakan. Periksa nama model yang tersedia di Google AI Studio/API dan kompatibilitas `@langchain/google-genai`. Ubah konfigurasi model di agent yang relevan. Jangan menganggap model yang disebut pada pesan error pasti tersedia untuk akun Anda tanpa memverifikasi akses.
+
+### Gemini `503 Service Unavailable`
+
+Layanan model dapat sedang sibuk. Coba kembali setelah jeda. LangChain juga dapat melakukan retry sehingga request mungkin memerlukan waktu. Jika berulang:
+
+- periksa terminal backend untuk stack trace;
+- jangan terus mengirim POST baru (gunakan incident ID yang sama untuk uji stream, dengan catatan pemanggilan stream menjalankan graph lagi);
+- pertimbangkan menambahkan timeout, retry yang dibatasi, dan penanganan status gagal;
+- DEMO_MODE dapat membantu pengujian fallback, tetapi output demo bukan output AI aktual.
+
+### SSE `200 OK` tetapi tidak ada `decision_ready`
+
+- Periksa terminal backend.
+- Cari pesan `[GRAPH]` atau `[PIPELINE ERROR]` jika logging tersebut telah ditambahkan.
+- `200 OK` tidak menunjukkan graph sukses.
+- Jika tidak ada progres, controller/streaming mungkin belum mengirim update selama node menunggu model.
+
+### `incident_id tidak ditemukan`
+
+Incident disimpan di RAM (Map). ID akan hilang ketika proses server dimulai ulang. Pastikan POST berhasil, gunakan ID yang benar, dan server belum restart.
+
+## 8. Batasan prototipe saat ini
+
+- **Belum ada MongoDB atau database permanen.** Incident tersimpan dalam Map di memory proses Node.js; data hilang ketika server restart.
+- Dataset kebijakan, fasilitas, dan tim demo belum tentu data resmi/terkini.
+- Retrieval kebijakan masih sederhana, belum merupakan sistem knowledge base produksi.
+- SSE dan proses graph belum menggunakan queue/background worker yang durable.
+- Tidak ada autentikasi/otorisasi API dalam prototipe ini.
+- Output AI, draft SPT, dan respons warga perlu validasi manusia.
+- Ketersediaan Gemini, kuota, rate limit, dan model yang dapat digunakan bergantung pada API key serta layanan Google.
+- Jangan memasukkan data pribadi/sensitif warga ke demo tanpa kebijakan perlindungan data yang sesuai.
+
+## 9. Checklist menjalankan backend
+
+- [ ] Folder backend terbuka dan `package.json` terlihat.
+- [ ] `npm install` berhasil.
+- [ ] `.env` dibuat dan API key sudah diisi.
+- [ ] `npm run dev` berjalan tanpa startup error.
+- [ ] GET `/health` menghasilkan `status: ok`.
+- [ ] POST `/api/incidents` mengembalikan `201` dan incident ID.
+- [ ] GET `/api/stream?incident_id=...` menerima event SSE.
+- [ ] Stream berakhir dengan `decision_ready` atau menunjukkan `error` yang dapat ditelusuri.
+
+## 10. Catatan integrasi frontend
+
+Frontend dapat:
+
+1. Mengirim POST `/api/incidents`.
+2. Mengambil `incident.id` dari respons.
+3. Membuka SSE `/api/stream?incident_id=...`.
+4. Membaca payload event dan memetakan `log`, `state_update`, `agent_progress`, `decision_ready`, atau `error`.
+5. Menampilkan hasil keputusan sebagai **draft untuk persetujuan manusia**, bukan keputusan otomatis yang langsung dijalankan.
+
+Untuk implementasi browser, `EventSource` native dapat digunakan untuk endpoint SSE GET. Pastikan parsing payload mengikuti field `type` pada JSON yang dikirim backend.
