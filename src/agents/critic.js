@@ -1,4 +1,4 @@
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { createChatModel } from "./model.js";
 import { z } from "zod";
 const schema = z.object({
   citation_valid: z.boolean(),
@@ -8,10 +8,9 @@ const schema = z.object({
   confidenceScore: z.number().min(0).max(100),
 });
 export async function runCritic(policy, optimizer, attempt) {
-  const model = new ChatGoogleGenerativeAI({
-    model: "gemini-3.8-flash-lite",
-    temperature: 0,
-  }).withStructuredOutput(schema);
+  const model = createChatModel({ temperature: 0 }).withStructuredOutput(
+    schema,
+  );
   const prompt = `Audit tiga indikator. citation_valid harus true bila legalBases berisi setidaknya satu basis yang bersumber dari retrieval dokumen; budget_available true bila estimasi<=5000000; team_not_overloaded true bila tim tersedia dan personel >=3. Jangan mengubah aturan deterministik tersebut.\nLegal: ${JSON.stringify(policy.legalBases)}\nTim: ${JSON.stringify(optimizer.team)}\nEstimasi: ${optimizer.prep.budgetEstimated}\nAttempt: ${attempt}`;
   try {
     return await model.invoke(prompt);

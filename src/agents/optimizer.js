@@ -6,7 +6,7 @@ import {
   priorityFromScore,
   severityFromScore,
 } from "../utils/scoring.js";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { createChatModel } from "./model.js";
 import { z } from "zod";
 const auditPrepSchema = z.object({
   mission: z.string(),
@@ -34,10 +34,9 @@ export async function runOptimizer(incident, triage, policy, attempt) {
     budgetEstimated: 1000000,
   };
   try {
-    const model = new ChatGoogleGenerativeAI({
-      model: "gemini-3.8-flash",
-      temperature: 0.2,
-    }).withStructuredOutput(auditPrepSchema);
+    const model = createChatModel({ temperature: 0.2 }).withStructuredOutput(
+      auditPrepSchema,
+    );
     prep = await model.invoke(
       `Buat mission ringkas dan pesan warga yang empatik serta estimasi anggaran dalam rupiah untuk laporan ini.\n${incident.description}\n${JSON.stringify(policy)}`,
     );
