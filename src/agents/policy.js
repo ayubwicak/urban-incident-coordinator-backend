@@ -1,4 +1,4 @@
-import { createChatModel } from "./model.js";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { retrievePolicies } from "../services/policyStore.js";
 import { z } from "zod";
 const schema = z.object({

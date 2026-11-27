@@ -9,8 +9,8 @@ Backend demo **Multi-Agent Public Policy & Urban Incident Coordinator** untuk me
 - Node.js (ES Modules)
 - Express.js
 - LangGraph.js
-- LangChain OpenAI (`@langchain/openai`)
-- 9router (gateway OpenAI-compatible), model `nous/tencent/hy4-flash:free`
+- LangChain Google GenAI (`@langchain/google-genai`)
+- Google Gemini API dengan model `gemini-3.5-flash-lite` (dikonfigurasi di masing-masing agent)
 - Open-Meteo (konteks cuaca, jika service dapat diakses)
 - Server-Sent Events (SSE) untuk stream hasil/progres
 - Penyimpanan incident sementara di memory (`Map`), **belum menggunakan database**
@@ -19,7 +19,7 @@ Backend demo **Multi-Agent Public Policy & Urban Incident Coordinator** untuk me
 
 ```mermaid
 flowchart TD
-    A[Postman / Next.js] --> B[Express API]****
+    A[Postman / Next.js] --> B[Express API]
     B --> C[POST /api/incidents\nBuat incident dan simpan sementara]
     C --> D[GET /api/stream\nSSE]
     D --> E[LangGraph]
@@ -93,7 +93,7 @@ src/
 
 - Node.js versi 20 atau yang lebih baru (disarankan versi LTS yang kompatibel dengan dependency proyek).
 - npm.
-- 9router berjalan di `http://localhost:20128/v1` (atau base URL lain) dan API key 9router yang memiliki akses ke model yang dipilih. Cek dengan `curl -H "Authorization: Bearer $ROUTER_API_KEY" http://localhost:20128/v1/models`.
+- Google Gemini API key dari Google AI Studio, dengan akses dan kuota model yang digunakan.
 - Postman (opsional, untuk menguji API).
 
 ## 5. Instalasi dan konfigurasi
@@ -128,17 +128,13 @@ Edit `.env`:
 
 ```dotenv
 PORT=8000
-ROUTER_API_KEY=ISI_API_KEY_9ROUTER_ANDA
-ROUTER_BASE_URL=http://localhost:20128/v1
-ROUTER_MODEL=nous/tencent/hy4-flash:free
+GEMINI_API_KEY=ISI_API_KEY_ANDA
 DEMO_MODE=false
 CORS_ORIGIN=http://localhost:3000
 ```
 
 - `PORT`: port server.
-- `ROUTER_API_KEY`: API key 9router (diawali `sk-`). Jangan commit atau membagikan file `.env`.
-- `ROUTER_BASE_URL`: endpoint OpenAI-compatible 9router. Default `http://localhost:20128/v1`.
-- `ROUTER_MODEL`: id model dari daftar `/v1/models`, misalnya `nous/tencent/hy4-flash:free`.
+- `GEMINI_API_KEY`: API key Gemini. Jangan commit atau membagikan file `.env`.
 - `DEMO_MODE`: `false` menggunakan pemanggilan agent AI; `true` mengizinkan fallback demo jika pipeline gagal, sesuai implementasi controller.
 - `CORS_ORIGIN`: origin frontend. Beberapa origin dapat dipisahkan dengan koma, sesuai konfigurasi backend.
 
@@ -246,23 +242,13 @@ POST body harus dikirim melalui **Body → raw → JSON**, bukan Query Params. P
 
 Nama node tidak boleh sama dengan channel/atribut state. Jika state memiliki channel `triage` atau `decision`, jangan mendaftarkan node dengan nama yang identik. Gunakan nama node yang berbeda, misalnya `finalize` untuk node finalisasi, dan sesuaikan edge/routing.
 
-### 9router `404 Not Found` / model tidak tersedia
+### Gemini `404 Not Found` / model tidak tersedia
 
-Model yang dipanggil mungkin tidak tersedia untuk key tersebut. Lihat daftar model yang benar-benar bisa dipanggil:
+Model yang dipanggil mungkin tidak tersedia untuk API key, region, versi API, atau integrasi yang digunakan. Periksa nama model yang tersedia di Google AI Studio/API dan kompatibilitas `@langchain/google-genai`. Ubah konfigurasi model di agent yang relevan. Jangan menganggap model yang disebut pada pesan error pasti tersedia untuk akun Anda tanpa memverifikasi akses.
 
-```bash
-curl -H "Authorization: Bearer $ROUTER_API_KEY" http://localhost:20128/v1/models
-```
+### Gemini `503 Service Unavailable`
 
-Salin salah satu `id` dari hasil tersebut ke `ROUTER_MODEL` di `.env`, lalu restart server. Jangan menebak nama model.
-
-### 9router `401 Unauthorized`
-
-Periksa `ROUTER_API_KEY` di `.env` dan pastikan 9router menyimpan key tersebut (dashboard → Endpoint). Pastikan juga `ROUTER_BASE_URL` mengarah ke instance yang benar.
-
-### Model sibuk / `429` / `503`
-
-Layanan model dapat sedang sibuk atau kuota habis. Coba kembali setelah jeda atau ganti `ROUTER_MODEL` ke model lain yang tersedia. LangChain melakukan retry sehingga request mungkin memerlukan waktu. Jika berulang:
+Layanan model dapat sedang sibuk. Coba kembali setelah jeda. LangChain juga dapat melakukan retry sehingga request mungkin memerlukan waktu. Jika berulang:
 
 - periksa terminal backend untuk stack trace;
 - jangan terus mengirim POST baru (gunakan incident ID yang sama untuk uji stream, dengan catatan pemanggilan stream menjalankan graph lagi);
@@ -283,12 +269,12 @@ Incident disimpan di RAM (Map). ID akan hilang ketika proses server dimulai ulan
 ## 8. Batasan prototipe saat ini
 
 - **Belum ada MongoDB atau database permanen.** Incident tersimpan dalam Map di memory proses Node.js; data hilang ketika server restart.
-- Model default `nous/tencent/hy4-flash:free` tidak mendukung input gambar; field `imageUrl` hanya berguna jika `ROUTER_MODEL` diganti dengan model yang memiliki kemampuan vision.
+- Dataset kebijakan, fasilitas, dan tim demo belum tentu data resmi/terkini.
 - Retrieval kebijakan masih sederhana, belum merupakan sistem knowledge base produksi.
 - SSE dan proses graph belum menggunakan queue/background worker yang durable.
 - Tidak ada autentikasi/otorisasi API dalam prototipe ini.
 - Output AI, draft SPT, dan respons warga perlu validasi manusia.
-- Ketersediaan model, kuota, dan rate limit bergantung pada API key 9router serta penyedia model di baliknya.
+- Ketersediaan Gemini, kuota, rate limit, dan model yang dapat digunakan bergantung pada API key serta layanan Google.
 - Jangan memasukkan data pribadi/sensitif warga ke demo tanpa kebijakan perlindungan data yang sesuai.
 
 ## 9. Checklist menjalankan backend

@@ -6,7 +6,7 @@ import {
   priorityFromScore,
   severityFromScore,
 } from "../utils/scoring.js";
-import { createChatModel } from "./model.js";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { z } from "zod";
 const auditPrepSchema = z.object({
   mission: z.string(),

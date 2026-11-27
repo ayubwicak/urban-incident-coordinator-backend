@@ -1,4 +1,4 @@
-import { createChatModel } from "./model.js";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { z } from "zod";
 const schema = z.object({
   citation_valid: z.boolean(),
