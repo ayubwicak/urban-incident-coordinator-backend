@@ -11,7 +11,7 @@ const schema = z.object({
 });
 export async function runTriage(incident) {
   const model = new ChatGoogleGenerativeAI({
-    model: "gemini-3.8-flash",
+    model: "gemini-3.5-flash-lite",
     temperature: 0.2,
   }).withStructuredOutput(schema);
   const text = `Analisis laporan insiden perkotaan. Keluarkan kategori, objek, skor severity S (0-100), impact risk R (0-100), ringkasan, dan koordinat jika tersedia. Jangan mengarang koordinat.\nLaporan: ${incident.description}\nLokasi: ${incident.location || "tidak disebutkan"}\nKoordinat: ${incident.latitude ?? ""}, ${incident.longitude ?? ""}`;

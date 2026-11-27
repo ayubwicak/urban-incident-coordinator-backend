@@ -35,7 +35,7 @@ export async function runOptimizer(incident, triage, policy, attempt) {
   };
   try {
     const model = new ChatGoogleGenerativeAI({
-      model: "gemini-3.8-flash",
+      model: "gemini-3.5-flash-lite",
       temperature: 0.2,
     }).withStructuredOutput(auditPrepSchema);
     prep = await model.invoke(
